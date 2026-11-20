@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#ff7f00">
-<title>قسطلي</title>
+<title>تقسيط الاخلاص</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <style>
@@ -147,6 +147,7 @@ dialog h2{margin-top:0}
  <h2 id="fTitle">إضافة عميل</h2>
  <div class="fld"><label for="fn">اسم العميل</label><input id="fn"></div>
  <div class="fld"><label for="fa">العنوان</label><input id="fa"></div>
+ <div class="fld"><label for="far">المنطقة (للفلترة في السداد)</label><input id="far" list="areaList" placeholder="مثلاً: الحي العاشر"><datalist id="areaList"></datalist></div>
  <div class="two">
   <div class="fld"><label for="fp">تليفون العميل</label><input id="fp" inputmode="tel"></div>
   <div class="fld"><label for="fd">تاريخ العقد</label><input id="fd" type="date"></div>
@@ -204,7 +205,7 @@ function fix(d){
   d=d||{};
   d.seq=d.seq||1; d.customers=d.customers||[]; d.del=d.del||{};
   d.set=Object.assign({company:'شركة الاخلاص للمفروشات',logo:'',dx:0,dy:0,mode:'t80',rep:'',repPhone:'',mod:0},d.set||{});
-  d.customers.forEach(c=>{c.paid=c.paid||{};c.no=c.no||0;c.address=c.address||'';c.phone=c.phone||'';c.rep=c.rep||'';c.repPhone=c.repPhone||'';c.down=+c.down||0;c.pts=c.pts||{};c.mod=c.mod||Date.now()});
+  d.customers.forEach(c=>{c.paid=c.paid||{};c.no=c.no||0;c.address=c.address||'';c.area=c.area||'';c.phone=c.phone||'';c.rep=c.rep||'';c.repPhone=c.repPhone||'';c.down=+c.down||0;c.pts=c.pts||{};c.mod=c.mod||Date.now()});
   return d;
 }
 function load(){
@@ -236,7 +237,7 @@ function allInst(){
 const byId=id=>db.customers.find(c=>c.id===id);
 
 /* ---------- الحالة ---------- */
-let view='home',payF='month',payM=todayISO().slice(0,7),payQ='',custQ='',editId=null,detId=null,payCtx=null,prCtx=null;
+let view='home',payF='month',payM=todayISO().slice(0,7),payQ='',custQ='',payA='',custA='',editId=null,detId=null,payCtx=null,prCtx=null;
 
 function stats(){
   const t=todayISO(),m=t.slice(0,7);
@@ -278,6 +279,12 @@ function vHome(){
   </details>`;
 }
 
+function areas(){return [...new Set(db.customers.map(c=>(c.area||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'))}
+function areaSel(id,cur){
+  const A=areas();if(!A.length)return '';
+  return `<div class="fld"><label for="${id}">المنطقة</label><select id="${id}"><option value="">كل المناطق</option>${A.map(a=>`<option value="${esc(a)}" ${cur===a?'selected':''}>${esc(a)}</option>`).join('')}<option value="__none" ${cur==='__none'?'selected':''}>بدون منطقة</option></select></div>`;
+}
+const areaOk=(c,f)=>!f||(f==='__none'?!(c.area||''):(c.area||'')===f);
 function instCard(x,withName){
   const t=todayISO(),c=x.c,late=!x.paid&&x.dueIso<t;
   const days=late?Math.floor((pd(t)-pd(x.dueIso))/864e5):0;
@@ -286,7 +293,7 @@ function instCard(x,withName){
   const a=`data-c="${c.id}" data-k="${x.k}"`;
   return `<div class="ic ${cls}">
    <div class="r1">${withName?`<b>${esc(c.name)}</b>`:`<b>القسط ${x.k} من ${c.months}</b>`}<span class="amt">${n0(x.amt)} ج.م</span></div>
-   <div class="r2">${withName?`<span>القسط ${x.k} من ${c.months}</span>`:''}<span>الاستحقاق ${fd(x.dueIso)}</span><span class="st">${st}</span></div>
+   <div class="r2">${withName?`<span>القسط ${x.k} من ${c.months}</span>${c.area?`<span>${esc(c.area)}</span>`:''}`:''}<span>الاستحقاق ${fd(x.dueIso)}</span><span class="st">${st}</span></div>
    <div class="r3">${x.paid
      ?`<button class="b bl sm" data-act="rcpt" ${a}>طباعة الإيصال</button><button class="b ghost sm" data-act="unpay" ${a}>إلغاء السداد</button>`
      :`<button class="b gr sm" data-act="pay" ${a}>سداد</button>${withName&&c.phone?`<a class="b ghost sm" href="tel:${esc(c.phone)}">اتصال</a>`:''}`}</div>
@@ -300,6 +307,7 @@ function payList(){
   else if(payF==='late')L=L.filter(x=>!x.paid&&x.dueIso<t);
   else L=L.filter(x=>!x.paid);
   if(q)L=L.filter(x=>(x.c.name+' '+x.c.phone).toLowerCase().includes(q));
+  if(payA)L=L.filter(x=>areaOk(x.c,payA));
   L.sort((a,b)=>a.dueIso<b.dueIso?-1:a.dueIso>b.dueIso?1:a.c.name.localeCompare(b.c.name,'ar'));
   return L;
 }
@@ -309,6 +317,7 @@ function vPay(){
    <button class="chip c2 ${payF==='late'?'on':''}" data-act="pf" data-f="late">المتأخرين</button>
    <button class="chip c3 ${payF==='unpaid'?'on':''}" data-act="pf" data-f="unpaid">كل غير المسدد</button></div>
    ${payF==='month'?`<div class="fld"><label for="pmonth">الشهر</label><input id="pmonth" type="month" value="${payM}"></div>`:''}
+   ${areaSel('parea',payA)}
    <div class="fld"><input id="psearch" type="search" placeholder="بحث بالاسم أو التليفون" value="${esc(payQ)}"></div>
    <div id="plist"></div>`;
 }
@@ -320,12 +329,12 @@ function fillPay(){
 }
 
 function vCust(){
-  return `<div class="fld"><input id="csearch" type="search" placeholder="بحث بالاسم أو التليفون أو المنتج" value="${esc(custQ)}"></div><div id="clist"></div>
+  return `${areaSel('carea',custA)}<div class="fld"><input id="csearch" type="search" placeholder="بحث بالاسم أو التليفون أو المنتج" value="${esc(custQ)}"></div><div id="clist"></div>
    <button class="fab" data-act="addCust">+ عميل جديد</button>`;
 }
 function fillCust(){
   const q=custQ.trim().toLowerCase();
-  const L=db.customers.filter(c=>!q||(c.name+' '+c.phone+' '+c.product).toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+  const L=db.customers.filter(c=>areaOk(c,custA)&&(!q||(c.name+' '+c.phone+' '+c.product).toLowerCase().includes(q))).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
   $('#clist').innerHTML=L.length?L.map(c=>{
     let r=0,p=0;for(let k=1;k<=c.months;k++){const i=inst(c,k);if(i.paid){p++}else r+=i.amt}
     return `<div class="cc" data-act="det" data-c="${c.id}"><div class="r1"><b>${esc(c.name)}</b><span>${r?n0(r)+' ج.م متبقي':'<span style="color:#1f9d4c">خالص</span>'}</span></div>
@@ -401,7 +410,7 @@ function openForm(c){
   editId=c?c.id:null;
   $('#fTitle').textContent=c?'تعديل: '+c.name:'إضافة عميل';
   const v=(id,x)=>$(id).value=x;
-  v('#fn',c?c.name:'');v('#fa',c?c.address:'');v('#fp',c?c.phone:'');v('#fd',c?c.date:todayISO());
+  v('#fn',c?c.name:'');v('#fa',c?c.address:'');v('#far',c?c.area:'');$('#areaList').innerHTML=areas().map(a=>`<option value="${esc(a)}">`).join('');v('#fp',c?c.phone:'');v('#fd',c?c.date:todayISO());
   v('#fq',c?c.product:'');v('#ft',c?c.total:'');v('#fo',c?c.down:0);v('#fm',c?c.months:'');
   v('#fr',c?c.rep:db.set.rep);v('#fh',c?c.repPhone:db.set.repPhone);
   fcalc();$('#dForm').showModal();
@@ -413,7 +422,7 @@ function fcalc(){
 }
 ['#ft','#fo','#fm','#fd'].forEach(s=>$(s).addEventListener('input',fcalc));
 function saveCust(){
-  const c={name:$('#fn').value.trim(),address:$('#fa').value.trim(),phone:$('#fp').value.trim(),date:$('#fd').value,product:$('#fq').value.trim(),total:+$('#ft').value,down:+$('#fo').value||0,months:Math.round(+$('#fm').value),rep:$('#fr').value.trim(),repPhone:$('#fh').value.trim()};
+  const c={name:$('#fn').value.trim(),address:$('#fa').value.trim(),area:$('#far').value.trim(),phone:$('#fp').value.trim(),date:$('#fd').value,product:$('#fq').value.trim(),total:+$('#ft').value,down:+$('#fo').value||0,months:Math.round(+$('#fm').value),rep:$('#fr').value.trim(),repPhone:$('#fh').value.trim()};
   const bad=(m,s)=>{toast(m);$(s).focus()};
   if(!c.name)return bad('اكتب اسم العميل','#fn');
   if(!c.date)return bad('اكتب تاريخ العقد','#fd');
@@ -809,6 +818,8 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',async e=>{
   const t=e.target,f=t.files&&t.files[0];
+  if(t.id==='parea'){payA=t.value;fillPay();return}
+  if(t.id==='carea'){custA=t.value;fillCust();return}
   if(t.id==='sl'&&f){
     const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const s=Math.min(1,300/Math.max(im.width,im.height)),cv=document.createElement('canvas');cv.width=im.width*s;cv.height=im.height*s;cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);db.set.logo=cv.toDataURL('image/png');db.set.mod=Date.now();save();render();toast('تم تحميل اللوجو')};im.src=r.result};r.readAsDataURL(f);
   }
