@@ -199,6 +199,12 @@ dialog h2{margin-top:0}
 </dialog>
 
 <div id="pa"></div>
+<dialog id="dPin">
+ <h2 id="pinT">أدخل الرقم السري</h2>
+ <div class="fld"><input id="pinIn" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="••••"></div>
+ <p class="note" id="pinMsg"></p>
+ <div class="acts"><button class="b gr" data-act="pinOk">تأكيد</button><button class="b ghost" data-act="pinCancel">إلغاء</button></div>
+</dialog>
 <div id="toast"></div>
 
 <script>
@@ -221,7 +227,7 @@ function load(){
   return fix({});
 }
 let db=load();
-const save=ns=>{try{localStorage.setItem(K,JSON.stringify(db))}catch(e){toast('المساحة خلصت - شيل اللوجو أو صغّره');return false}if(!ns){markPending();scheduleSync()}return true};
+const save=ns=>{if(window.__wiped)return false;try{localStorage.setItem(K,JSON.stringify(db))}catch(e){toast('المساحة خلصت - شيل اللوجو أو صغّره');return false}if(!ns){markPending();scheduleSync()}return true};
 
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const n0=v=>Math.round(+v||0).toLocaleString('en-US');
@@ -426,6 +432,18 @@ function vSet(){
     <div class="acts"><button class="b bl" data-act="backup">حفظ نسخة احتياطية</button>
     <label class="b ghost" style="margin:0">استرجاع نسخة<input id="restore" type="file" accept=".json" hidden></label>
     <button class="b ghost" data-act="csv">تصدير العملاء (Excel)</button></div></div>
+   <div class="card"><h2>الحماية والتسليم</h2>
+    <p class="note">${lockOn()?'قفل الإعدادات <b style="color:#1f9d4c">مفعّل</b>. أي حد هيفتح الإعدادات لازم يكتب الرقم السري.':'قفل الإعدادات <b style="color:#8a1320">غير مفعّل</b>. اكتب رقم سري (4 إلى 8 أرقام) علشان محدش غيرك يدخل الإعدادات.'}</p>
+    <div class="two"><div class="fld"><label for="lkA">${lockOn()?'الرقم السري الجديد':'الرقم السري'}</label><input id="lkA" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></div>
+    <div class="fld"><label for="lkB">تأكيد الرقم</label><input id="lkB" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></div></div>
+    <div class="acts"><button class="b gr" data-act="lockSet">${lockOn()?'تغيير الرقم السري':'تفعيل القفل'}</button>${lockOn()?'<button class="b ghost" data-act="lockOff">إلغاء القفل</button>':''}</div>
+    <p class="note">احتفظ بالرقم السري في مكان آمن. لو نسيته مفيش طريقة لاسترجاعه غير مسح بيانات التطبيق من إعدادات المتصفح.</p>
+   </div>
+
+   <div class="card"><h2>تسليم لعميل جديد</h2>
+    <p class="note">بيمسح كل العملاء والأقساط واللوجو وربط المزامنة من التليفون ده، ويرجّع التطبيق فاضي. الرقم السري بيفضل زي ما هو. <b>خد نسخة احتياطية قبلها.</b> المسح مش بيمس بيانات Google Drive.</p>
+    <button class="b rd full" data-act="wipeAll">مسح كل البيانات</button></div>
+
    <div class="credit">تصميم وبرمجة: محمد ناصر (راديولجي) - 01027080900</div>`;
 }
 
@@ -712,12 +730,72 @@ function importInst(text){
   toast(`تم تسجيل ${n} قسط مسدد`+(miss?` (${miss} بدون عميل - استورد العملاء الأول)`:''));
 }
 
+/* ---------- قفل الإعدادات والمسح ---------- */
+const LK='ikhlas_lock_v1';
+let setOpen=false,pinCb=null;
+function getL(){try{return JSON.parse(localStorage.getItem(LK))||{}}catch(e){return {}}}
+function saveL(L){try{localStorage.setItem(LK,JSON.stringify(L))}catch(e){}}
+const lockOn=()=>!!getL().h;
+async function pinHash(pin,salt){
+  const d=salt+':'+pin;
+  if(window.crypto&&crypto.subtle){
+    const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(d));
+    return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  }
+  let h=5381;for(let i=0;i<d.length;i++)h=((h<<5)+h+d.charCodeAt(i))>>>0;return 'f'+h.toString(16);
+}
+function askPin(cb){
+  pinCb=cb;$('#pinIn').value='';$('#pinMsg').textContent='';
+  $('#dPin').showModal();setTimeout(()=>$('#pinIn').focus(),50);
+}
+async function pinOk(){
+  const L=getL(),pin=$('#pinIn').value.trim(),m=$('#pinMsg');
+  const wait=Math.ceil(((L.t||0)-Date.now())/1000);
+  if(wait>0){m.textContent='محاولات كتير. استنى '+wait+' ثانية';return}
+  if(!pin){m.textContent='اكتب الرقم السري';return}
+  if(await pinHash(pin,L.s||'')===L.h){
+    L.f=0;L.t=0;saveL(L);$('#dPin').close();
+    const cb=pinCb;pinCb=null;if(cb)cb();
+  }else{
+    L.f=(L.f||0)+1;
+    if(L.f>=5){L.f=0;L.t=Date.now()+60000;m.textContent='محاولات كتير. استنى دقيقة'}else m.textContent='الرقم غلط ('+L.f+' من 5)';
+    saveL(L);$('#pinIn').value='';
+  }
+}
+$('#pinIn').addEventListener('keydown',e=>{if(e.key==='Enter')pinOk()});
+async function lockSet(){
+  const a=$('#lkA').value.trim(),b=$('#lkB').value.trim();
+  if(!/^\d{4,8}$/.test(a)){toast('الرقم السري من 4 إلى 8 أرقام');return}
+  if(a!==b){toast('الرقمين مش متطابقين');return}
+  const salt=Math.random().toString(36).slice(2,10);
+  saveL({s:salt,h:await pinHash(a,salt),f:0,t:0});
+  setOpen=true;toast('تم تفعيل القفل');render();
+}
+function lockOff(){
+  if(!confirm('تلغي قفل الإعدادات؟ أي حد هيقدر يدخلها.'))return;
+  try{localStorage.removeItem(LK)}catch(e){}
+  toast('تم إلغاء القفل');render();
+}
+function wipeAll(){
+  if(!confirm('هتمسح كل العملاء والأقساط والإعدادات وربط المزامنة من التليفون ده. خدت نسخة احتياطية؟ تكمل؟'))return;
+  if(!confirm('تأكيد أخير: المسح نهائي ومفيش رجعة. تمسح؟'))return;
+  window.__wiped=true;
+  try{
+    [K,'ikhlas_app_v1',SK,NK].forEach(k=>localStorage.removeItem(k));
+    sessionStorage.clear();
+  }catch(e){}
+  location.reload();
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){setOpen=false;if(view==='set'&&lockOn()){view='home';render()}}
+});
+
 /* ---------- التنبيهات ---------- */
 const NK='ikhlas_notif_v1';
 const NDEF={msg:'بدأ وقت التحصيل! يلا نبدأ الشهر بقوة 💪',daily:false,sys:false,lm:'',ld:''};
 const MOTI=['كل قسط بتحصّله بيقرّبك من هدفك 💰','ابدأ يومك بابتسامة والتحصيل هييجي 🌟','الشاطر اللي بيتابع عملاءه كل يوم ✅','يوم جديد وفرصة جديدة للتحصيل 🚀','الاتصال بالعميل بيفرق، ابدأ بأول اسم النهارده 📞','شغلك المنظم هو سر نجاحك 📒'];
 function getN(){try{return Object.assign({},NDEF,JSON.parse(localStorage.getItem(NK))||{})}catch(e){return Object.assign({},NDEF)}}
-function saveN(N){try{localStorage.setItem(NK,JSON.stringify(N))}catch(e){}}
+function saveN(N){if(window.__wiped)return;try{localStorage.setItem(NK,JSON.stringify(N))}catch(e){}}
 function showNb(t){const e=$('#nb');if(e)e.innerHTML=`<div class="alert"><span>${esc(t)}</span><button class="b ghost sm" data-act="nbClose">إغلاق</button></div>`}
 function sysNote(title,body){
   const N=getN();
@@ -811,7 +889,7 @@ function testEmail() { monthMail_(ymd_(new Date()), NOTIFY_EMAIL || Session.getE
 `;
 const SK='ikhlas_sync_v1';
 function getSync(){try{return JSON.parse(localStorage.getItem(SK))||{}}catch(e){return {}}}
-function saveSync(S){try{localStorage.setItem(SK,JSON.stringify(S))}catch(e){}}
+function saveSync(S){if(window.__wiped)return;try{localStorage.setItem(SK,JSON.stringify(S))}catch(e){}}
 function markPending(){const S=getSync();if(S.url){S.pending=true;saveSync(S)}}
 function synText(){
   const S=getSync();if(!S.url)return 'غير مفعّلة';
@@ -927,11 +1005,20 @@ setInterval(()=>{if(!document.hidden)scheduleSync(0)},90000);
 /* ---------- الأحداث ---------- */
 document.addEventListener('click',e=>{
   const b=e.target.closest('[data-act],#nav button');if(!b)return;
-  if(b.parentElement&&b.parentElement.id==='nav'){view=b.dataset.v;render();return}
+  if(b.parentElement&&b.parentElement.id==='nav'){
+    const v=b.dataset.v;
+    if(v==='set'&&lockOn()&&!setOpen){askPin(()=>{setOpen=true;view='set';render()});return}
+    if(v!=='set')setOpen=false;
+    view=v;render();return}
   const a=b.dataset.act,cid=+b.dataset.c,k=+b.dataset.k;
   switch(a){
     case 'close':$('#'+b.dataset.d).close();break;
     case 'pf':payF=b.dataset.f;render();break;
+    case 'pinOk':pinOk();break;
+    case 'pinCancel':pinCb=null;$('#dPin').close();break;
+    case 'lockSet':lockSet();break;
+    case 'lockOff':lockOff();break;
+    case 'wipeAll':wipeAll();break;
     case 'nbClose':$('#nb').innerHTML='';break;
     case 'saveNotif':{
       const N=getN();N.msg=$('#nMsg').value.trim()||NDEF.msg;N.daily=$('#nDaily').checked;N.sys=$('#nSys').checked;saveN(N);
