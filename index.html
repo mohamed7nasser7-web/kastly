@@ -156,12 +156,13 @@ dialog h2{margin-top:0}
   <div class="fld"><label for="fp">تليفون العميل</label><input id="fp" inputmode="tel"></div>
   <div class="fld"><label for="fd">تاريخ العقد</label><input id="fd" type="date"></div>
  </div>
+ <div class="fld"><label for="fk">نوع البيع</label><select id="fk"><option value="inst">تقسيط</option><option value="cash">كاش (دفع كامل)</option></select></div>
  <div class="fld"><label for="fq">المنتج</label><input id="fq"></div>
  <div class="two">
   <div class="fld"><label for="ft">إجمالي السعر</label><input id="ft" type="number" inputmode="decimal" min="0"></div>
-  <div class="fld"><label for="fo">المقدم</label><input id="fo" type="number" inputmode="decimal" min="0" value="0"></div>
+  <div class="fld" id="wDown"><label for="fo">المقدم</label><input id="fo" type="number" inputmode="decimal" min="0" value="0"></div>
  </div>
- <div class="fld"><label for="fm">عدد الشهور (1 - 12)</label><input id="fm" type="number" inputmode="numeric" min="1" max="12"></div>
+ <div class="fld" id="wMonths"><label for="fm">عدد الشهور (1 - 12)</label><input id="fm" type="number" inputmode="numeric" min="1" max="12"></div>
  <div class="two">
   <div class="fld"><label for="fr">اسم المندوب</label><input id="fr"></div>
   <div class="fld"><label for="fh">تليفون المندوب</label><input id="fh" inputmode="tel"></div>
@@ -209,7 +210,7 @@ function fix(d){
   d=d||{};
   d.seq=d.seq||1; d.customers=d.customers||[]; d.del=d.del||{};
   d.set=Object.assign({company:'شركة الاخلاص للمفروشات',logo:'',dx:0,dy:0,mode:'t80',rep:'',repPhone:'',mod:0},d.set||{});
-  d.customers.forEach(c=>{c.paid=c.paid||{};c.no=c.no||0;c.address=c.address||'';c.area=c.area||'';c.phone=c.phone||'';c.rep=c.rep||'';c.repPhone=c.repPhone||'';c.down=+c.down||0;c.pts=c.pts||{};c.mod=c.mod||Date.now()});
+  d.customers.forEach(c=>{c.paid=c.paid||{};c.no=c.no||0;c.cash=!!c.cash;c.address=c.address||'';c.area=c.area||'';c.phone=c.phone||'';c.rep=c.rep||'';c.repPhone=c.repPhone||'';c.down=+c.down||0;c.pts=c.pts||{};c.mod=c.mod||Date.now()});
   return d;
 }
 function load(){
@@ -231,7 +232,7 @@ function addM(s,k){const d=pd(s),day=d.getDate(),t=new Date(d.getFullYear(),d.ge
 function fd(d){if(typeof d==='string')d=pd(d);return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()}
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>e.classList.remove('on'),2400)}
 
-function calc(c){const rem=c.total-c.down,mo=Math.round(rem/c.months);return{rem,mo,last:rem-mo*(c.months-1)}}
+function calc(c){if(!(c.months>=1))return{rem:0,mo:0,last:0};const rem=c.total-c.down,mo=Math.round(rem/c.months);return{rem,mo,last:rem-mo*(c.months-1)}}
 function inst(c,k){const x=calc(c);return{amt:k===c.months?x.last:x.mo,due:addM(c.date,k),after:k===c.months?0:x.rem-x.mo*k,paid:c.paid[k]||''}}
 function allInst(){
   const out=[];
@@ -246,25 +247,27 @@ let view='home',payF='month',payM=todayISO().slice(0,7),payQ='',custQ='',payA=''
 const MNAMES=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 const mLabel=k=>MNAMES[+k.slice(5,7)-1]+' '+k.slice(0,4);
 function monthly(){
-  const M={},g=k=>M[k]||(M[k]={k,down:0,dn:0,inst:0,inn:0});
+  const M={},g=k=>M[k]||(M[k]={k,down:0,dn:0,inst:0,inn:0,cash:0,cn:0});
   db.customers.forEach(c=>{
-    if(c.down>0&&c.date){const x=g(c.date.slice(0,7));x.down+=c.down;x.dn++}
+    if(c.cash&&c.date){const x=g(c.date.slice(0,7));x.cash+=c.total;x.cn++}
+    else if(c.down>0&&c.date){const x=g(c.date.slice(0,7));x.down+=c.down;x.dn++}
     for(let k=1;k<=c.months;k++){const i=inst(c,k);if(i.paid){const x=g(String(i.paid).slice(0,7));x.inst+=i.amt;x.inn++}}
   });
   return Object.values(M).sort((a,b)=>a.k<b.k?1:-1);
 }
 function stats(){
   const t=todayISO(),m=t.slice(0,7);
-  const s={cust:db.customers.length,sales:0,down:0,paid:0,rem:0,late:0,lateN:0,mDue:0,mPaid:0};
+  const s={cust:db.customers.length,sales:0,down:0,cash:0,cashM:0,paid:0,rem:0,late:0,lateN:0,mDue:0,mPaid:0};
   db.customers.forEach(c=>{
-    s.sales+=c.total;s.down+=c.down;
+    s.sales+=c.total;
+    if(c.cash){s.cash+=c.total;if((c.date||'').slice(0,7)===m)s.cashM+=c.total}else s.down+=c.down;
     for(let k=1;k<=c.months;k++){
       const i=inst(c,k),di=iso(i.due);
       if(i.paid){s.paid+=i.amt;if(String(i.paid).slice(0,7)===m)s.mPaid+=i.amt}
       else{s.rem+=i.amt;if(di<t){s.late+=i.amt;s.lateN++}if(di.slice(0,7)===m)s.mDue+=i.amt}
     }
   });
-  s.coll=s.down+s.paid;
+  s.coll=s.down+s.paid+s.cash;
   return s;
 }
 
@@ -283,11 +286,12 @@ function vHome(){
   <div class="tiles">
    ${T('المقدمات المستلمة',s.down)}${T('الأقساط المحصّلة',s.paid)}
    ${T('مستحق هذا الشهر',s.mDue,'y')}${T('محصّل هذا الشهر',s.mPaid,'g')}
-   ${T('مقدمات هذا الشهر',cur.down,'g')}${T('المتأخر',s.late,'r')}
-   ${T('إجمالي المحصّل (مقدم + أقساط)',s.coll,'g wide')}
+   ${T('مقدمات هذا الشهر',cur.down,'g')}${T('كاش هذا الشهر',s.cashM,'g')}
+   ${T('المتأخر',s.late,'r')}${T('إجمالي مبيعات الكاش',s.cash,'g')}
+   ${T('إجمالي المحصّل (مقدم + أقساط + كاش)',s.coll,'g wide')}
   </div>
   <details open><summary>التحصيل الشهري (المقدمات والأقساط)</summary>
-   ${ML.length?ML.map(x=>`<div class="row"><div><b>${mLabel(x.k)}</b><small>مقدمات ${n0(x.down)} (${x.dn} عقد) • أقساط ${n0(x.inst)} (${x.inn} قسط)</small></div><div><b style="color:#1f9d4c">${n0(x.down+x.inst)}</b><small>الإجمالي</small></div></div>`).join(''):'<div class="empty">لا توجد حركات</div>'}
+   ${ML.length?ML.map(x=>`<div class="row"><div><b>${mLabel(x.k)}</b><small>مقدمات ${n0(x.down)} (${x.dn} عقد) • أقساط ${n0(x.inst)} (${x.inn} قسط)${x.cash?' • كاش '+n0(x.cash)+' ('+x.cn+' بيع)':''}</small></div><div><b style="color:#1f9d4c">${n0(x.down+x.inst+x.cash)}</b><small>الإجمالي</small></div></div>`).join(''):'<div class="empty">لا توجد حركات</div>'}
    <p class="note">المقدم محسوب في شهر تاريخ العقد، والقسط في شهر تاريخ سداده.</p>
   </details>
   <div class="card" style="text-align:center">عدد العملاء: <b>${s.cust}</b></div>
@@ -356,6 +360,8 @@ function fillCust(){
   const q=custQ.trim().toLowerCase();
   const L=db.customers.filter(c=>areaOk(c,custA)&&(!q||(c.name+' '+c.phone+' '+c.product).toLowerCase().includes(q))).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
   $('#clist').innerHTML=L.length?L.map(c=>{
+    if(c.cash)return `<div class="cc" data-act="det" data-c="${c.id}"><div class="r1"><b>${esc(c.name)}</b><span style="color:#1f9d4c">بيع كاش ${n0(c.total)} ج.م</span></div>
+    <div class="r2">${esc(c.product)} - عقد رقم ${c.no}</div></div>`;
     let r=0,p=0;for(let k=1;k<=c.months;k++){const i=inst(c,k);if(i.paid){p++}else r+=i.amt}
     return `<div class="cc" data-act="det" data-c="${c.id}"><div class="r1"><b>${esc(c.name)}</b><span>${r?n0(r)+' ج.م متبقي':'<span style="color:#1f9d4c">خالص</span>'}</span></div>
     <div class="r2">${esc(c.product)} - عقد رقم ${c.no}</div>
@@ -439,11 +445,21 @@ function openForm(c){
   $('#fTitle').textContent=c?'تعديل: '+c.name:'إضافة عميل';
   const v=(id,x)=>$(id).value=x;
   v('#fn',c?c.name:'');v('#fa',c?c.address:'');v('#far',c?c.area:'');$('#areaList').innerHTML=areas().map(a=>`<option value="${esc(a)}">`).join('');v('#fp',c?c.phone:'');v('#fd',c?c.date:todayISO());
-  v('#fq',c?c.product:'');v('#ft',c?c.total:'');v('#fo',c?c.down:0);v('#fm',c?c.months:'');
+  v('#fk',c&&c.cash?'cash':'inst');v('#fq',c?c.product:'');v('#ft',c?c.total:'');v('#fo',c&&!c.cash?c.down:0);v('#fm',c&&!c.cash?c.months:'');
   v('#fr',c?c.rep:db.set.rep);v('#fh',c?c.repPhone:db.set.repPhone);
-  fcalc();$('#dForm').showModal();
+  kindUI();fcalc();$('#dForm').showModal();
 }
+const isCash=()=>$('#fk').value==='cash';
+function kindUI(){
+  const c=isCash();
+  $('#wDown').style.display=c?'none':'';$('#wMonths').style.display=c?'none':'';
+}
+$('#fk').addEventListener('change',()=>{
+  if(!isCash()&&+$('#fo').value>0&&+$('#fo').value===+$('#ft').value){$('#fo').value=0}
+  kindUI();fcalc();
+});
 function fcalc(){
+  if(isCash()){const t=+$('#ft').value||0;$('#fcalc').innerHTML=`<span>المبلغ المدفوع كاش</span><b>${t?n0(t)+' ج.م':'-'}</b><span>تاريخ البيع</span><b>${$('#fd').value?fd($('#fd').value):'-'}</b>`;return}
   const t=+$('#ft').value||0,o=+$('#fo').value||0,m=+$('#fm').value||0,d=$('#fd').value;
   const ok=t>0&&m>=1&&m<=12;
   $('#fcalc').innerHTML=`<span>المتبقي بعد المقدم</span><b>${t?n0(t-o)+' ج.م':'-'}</b><span>القسط الشهري</span><b>${ok?n0(Math.round((t-o)/m))+' ج.م':'-'}</b><span>أول قسط</span><b>${d?fd(addM(d,1)):'-'}</b><span>آخر قسط</span><b>${d&&m>=1?fd(addM(d,m)):'-'}</b>`;
@@ -451,17 +467,21 @@ function fcalc(){
 ['#ft','#fo','#fm','#fd'].forEach(s=>$(s).addEventListener('input',fcalc));
 function saveCust(){
   const c={name:$('#fn').value.trim(),address:$('#fa').value.trim(),area:$('#far').value.trim(),phone:$('#fp').value.trim(),date:$('#fd').value,product:$('#fq').value.trim(),total:+$('#ft').value,down:+$('#fo').value||0,months:Math.round(+$('#fm').value),rep:$('#fr').value.trim(),repPhone:$('#fh').value.trim()};
+  const cash=isCash();
+  if(cash){c.cash=true;c.down=c.total;c.months=0}else c.cash=false;
   const bad=(m,s)=>{toast(m);$(s).focus()};
   if(!c.name)return bad('اكتب اسم العميل','#fn');
   if(!c.date)return bad('اكتب تاريخ العقد','#fd');
   if(!c.product)return bad('اكتب اسم المنتج','#fq');
   if(!(c.total>0))return bad('اكتب إجمالي السعر','#ft');
-  if(c.down<0||c.down>c.total)return bad('المقدم لازم يكون من صفر لحد الإجمالي','#fo');
-  if(!(c.months>=1&&c.months<=12))return bad('عدد الشهور من 1 لـ 12','#fm');
+  if(!cash&&(c.down<0||c.down>c.total))return bad('المقدم لازم يكون من صفر لحد الإجمالي','#fo');
+  if(!cash&&!(c.months>=1&&c.months<=12))return bad('عدد الشهور من 1 لـ 12','#fm');
   if(db.customers.some(x=>x.name===c.name&&x.id!==editId)&&!confirm('الاسم ده موجود قبل كده. تحفظ برضه؟'))return;
   if(editId!==null){
-    const o=byId(editId);Object.assign(o,c);o.mod=Date.now();
-    Object.keys(o.paid).forEach(k=>{if(+k>o.months)delete o.paid[k]});
+    const o=byId(editId);
+    if(cash&&Object.keys(o.paid).length&&!confirm('العميل عليه أقساط مسددة. التحويل لكاش هيمسحها. تكمل؟'))return;
+    Object.assign(o,c);o.mod=Date.now();
+    Object.keys(o.paid).forEach(k=>{if(+k>o.months){delete o.paid[k];delete o.pts[k]}});
     toast('تم تعديل العميل');
   }else{c.id=Date.now();c.no=db.seq++;c.paid={};c.pts={};c.mod=Date.now();db.customers.push(c);toast('تم حفظ العميل رقم '+c.no)}
   db.set.rep=c.rep;db.set.repPhone=c.repPhone;
@@ -473,6 +493,13 @@ function openDet(id){
   const c=byId(id);if(!c)return;detId=id;
   let p=0,r=0;const L=[];
   for(let k=1;k<=c.months;k++){const i=inst(c,k);L.push({c,k,amt:i.amt,dueIso:iso(i.due),paid:i.paid});if(i.paid)p+=i.amt;else r+=i.amt}
+  if(c.cash){
+    $('#detBody').innerHTML=`<h2>${esc(c.name)}</h2>
+     <div class="calc"><span>نوع البيع</span><b style="color:#1f9d4c">كاش (دفع كامل)</b><span>المنتج</span><b>${esc(c.product)}</b><span>رقم العقد</span><b>${c.no}</b>
+     <span>المبلغ المدفوع</span><b>${n0(c.total)} ج.م</b><span>تاريخ البيع</span><b>${fd(c.date)}</b>
+     <span>التليفون</span><b>${c.phone?`<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>`:'-'}</b><span>العنوان</span><b>${esc(c.address)||'-'}</b></div>`;
+    if(!$('#dDet').open)$('#dDet').showModal();return;
+  }
   $('#detBody').innerHTML=`<h2>${esc(c.name)}</h2>
    <div class="calc"><span>المنتج</span><b>${esc(c.product)}</b><span>رقم العقد</span><b>${c.no}</b>
    <span>الإجمالي</span><b>${n0(c.total)} ج.م</b><span>المقدم</span><b>${n0(c.down)} ج.م</b>
@@ -541,7 +568,33 @@ function receiptWide(c,k){
    <tr><td class="s" colspan="2">توقيع المحصل:</td><td class="s" colspan="2">ختم الشركة:</td></tr>
    </table></div></div>`;
 }
-const receipt=(c,k,mode)=>mode==='t58'?receiptThermal(c,k,58):mode==='t80'?receiptThermal(c,k,80):receiptWide(c,k);
+function cashThermal(c,w){
+  const s=db.set;
+  return `<div class="tr w${w}">
+   ${s.logo?`<div class="lgo"><img src="${s.logo}" alt=""></div>`:''}
+   <div class="co">${esc(s.company)}</div>
+   <div class="tt">إيصال بيع نقدي (كاش)</div>
+   ${fmtL('العميل',esc(c.name))}${fmtL('العنوان',esc(c.address))}${fmtL('المنتج',esc(c.product))}
+   <div class="big"><span>المبلغ المدفوع</span><b>${n0(c.total)} ج.م</b></div>
+   ${fmtL('تاريخ البيع',fd(c.date))}${fmtL('رقم العقد',c.no)}
+   ${c.rep?fmtL('المندوب',esc(c.rep)):''}${c.repPhone?fmtL('تليفون المندوب',esc(c.repPhone)):''}
+   <div class="sg">توقيع المستلم: ........................</div>
+   <div class="ty">شكراً لتعاملكم معنا</div></div>`;
+}
+function cashWide(c){
+  const s=db.set;
+  return `<div class="rc" style="transform:translate(${s.dx}mm,${s.dy}mm)"><div class="box">
+   <div class="hd"><div class="lg">${s.logo?`<img src="${s.logo}" alt="">`:''}</div><div class="tt"><b>${esc(s.company)}</b><span>إيصال بيع نقدي (كاش) - عقد ${c.no}</span></div></div>
+   <table>
+   <tr><td class="k">اسم العميل</td><td class="v" colspan="3">${esc(c.name)}</td></tr>
+   <tr><td class="k">العنوان</td><td colspan="3">${esc(c.address)}</td></tr>
+   <tr><td class="k">المنتج</td><td colspan="3">${esc(c.product)}</td></tr>
+   <tr><td class="k">المبلغ المدفوع</td><td class="v" style="font-size:13pt">${n0(c.total)}</td><td class="k">تاريخ البيع</td><td class="v" style="font-size:13pt">${fd(c.date)}</td></tr>
+   <tr><td class="k">المندوب</td><td>${esc(c.rep)}</td><td class="k">تليفون المندوب</td><td class="v">${esc(c.repPhone)}</td></tr>
+   <tr><td class="s" colspan="2">توقيع المستلم:</td><td class="s" colspan="2">ختم الشركة:</td></tr>
+   </table></div></div>`;
+}
+const receipt=(c,k,mode)=>c.cash?(mode==='t58'?cashThermal(c,58):mode==='t80'?cashThermal(c,80):cashWide(c)):mode==='t58'?receiptThermal(c,k,58):mode==='t80'?receiptThermal(c,k,80):receiptWide(c,k);
 function pageCss(m,h){
   if(m==='t58'||m==='t80'){const w=m==='t58'?58:80;return `@page{size:${w}mm ${h}mm;margin:0}#pa .tr{height:${h}mm}`}
   if(m==='a4')return '@page{size:210mm 297mm;margin:0}@media print{.rc:nth-child(3n){break-after:page;page-break-after:always}.rc:not(:nth-child(3n)){break-after:avoid;page-break-after:avoid}.rc:last-child{break-after:auto;page-break-after:auto}}';
@@ -558,7 +611,7 @@ function thermalH(html){
 }
 function startPrint(cid,a,b,mode){
   const c=byId(cid);let h='';
-  for(let k=a;k<=b;k++)h+=receipt(c,k,mode);
+  if(c.cash)h=receipt(c,1,mode);else for(let k=a;k<=b;k++)h+=receipt(c,k,mode);
   $('#pgstyle').textContent=pageCss(mode,(mode==='t58'||mode==='t80')?thermalH(h):0);
   $('#pa').innerHTML=h;
   document.querySelectorAll('dialog[open]').forEach(d=>d.close());
@@ -567,12 +620,13 @@ function startPrint(cid,a,b,mode){
 function openPrint(cid,k){
   const c=byId(cid);prCtx=cid;
   $('#pTitle').textContent='طباعة إيصالات: '+c.name;
+  $('#pf').parentElement.parentElement.style.display=c.cash?'none':'';
   $('#pf').value=k||1;$('#pt').value=k||c.months;$('#pf').max=$('#pt').max=c.months;
   $('#pm').innerHTML=modeOpts(db.set.mode);
   showPv();if(!$('#dPrint').open)$('#dPrint').showModal();
 }
 function showPv(){
-  const c=byId(prCtx),mode=$('#pm').value,k=Math.min(c.months,Math.max(1,+$('#pf').value||1));
+  const c=byId(prCtx),mode=$('#pm').value,k=c.cash?1:Math.min(c.months,Math.max(1,+$('#pf').value||1));
   const pv=$('#pv');pv.innerHTML=receipt(c,k,mode);
   const el=pv.firstElementChild;el.style.transform='none';el.style.breakAfter='auto';
   const nat=el.offsetWidth,cw=pv.clientWidth-16,sc=Math.min(1,cw/nat);
@@ -896,6 +950,7 @@ document.addEventListener('click',e=>{
     case 'addCust':openForm(null);break;
     case 'saveCust':saveCust();break;
     case 'printGo':{const c=byId(prCtx),a1=+$('#pf').value,b1=+$('#pt').value;
+      if(c.cash){startPrint(prCtx,1,1,$('#pm').value);break}
       if(!(a1>=1&&b1<=c.months&&a1<=b1)){toast('الأرقام لازم تكون من 1 لـ '+c.months);break}
       startPrint(prCtx,a1,b1,$('#pm').value);break}
     case 'syncSave':syncSave();break;
