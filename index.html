@@ -45,6 +45,9 @@ summary{padding:12px 0;font-weight:700;cursor:pointer}
 input,select,textarea{width:100%;padding:11px 12px;border:1px solid #b9c7d4;border-radius:10px;font:inherit;font-size:16px;background:#fff;color:var(--ink)}
 input:focus,select:focus,button:focus-visible{outline:3px solid #8ec5ff;outline-offset:1px}
 label{display:block;font-weight:700;font-size:14px;margin:0 0 4px}
+input[type=checkbox]{width:auto;margin:0}.chk{display:flex;gap:8px;align-items:center;font-weight:600;margin:8px 0}
+.tile.wide{grid-column:1/-1}
+#nb:empty{display:none}#nb .alert{margin:8px 12px 0;background:#e8fbef;border-color:#9fdcb4;color:#155c30}
 .fld{margin-bottom:10px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .b{display:inline-block;border:0;border-radius:10px;padding:10px 14px;font:inherit;font-size:15px;font-weight:700;color:#fff;cursor:pointer;text-decoration:none;text-align:center}
@@ -123,6 +126,7 @@ dialog h2{margin-top:0}
 </head>
 <body>
 <header><h1 id="hco"></h1><span id="syn"></span><span id="hdate"></span></header>
+<div id="nb"></div>
 <main id="main"></main>
 <nav id="nav">
  <button data-v="home"><i>&#128176;</i>الخزينة</button>
@@ -239,6 +243,16 @@ const byId=id=>db.customers.find(c=>c.id===id);
 /* ---------- الحالة ---------- */
 let view='home',payF='month',payM=todayISO().slice(0,7),payQ='',custQ='',payA='',custA='',editId=null,detId=null,payCtx=null,prCtx=null;
 
+const MNAMES=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+const mLabel=k=>MNAMES[+k.slice(5,7)-1]+' '+k.slice(0,4);
+function monthly(){
+  const M={},g=k=>M[k]||(M[k]={k,down:0,dn:0,inst:0,inn:0});
+  db.customers.forEach(c=>{
+    if(c.down>0&&c.date){const x=g(c.date.slice(0,7));x.down+=c.down;x.dn++}
+    for(let k=1;k<=c.months;k++){const i=inst(c,k);if(i.paid){const x=g(String(i.paid).slice(0,7));x.inst+=i.amt;x.inn++}}
+  });
+  return Object.values(M).sort((a,b)=>a.k<b.k?1:-1);
+}
 function stats(){
   const t=todayISO(),m=t.slice(0,7);
   const s={cust:db.customers.length,sales:0,down:0,paid:0,rem:0,late:0,lateN:0,mDue:0,mPaid:0};
@@ -261,6 +275,7 @@ function vHome(){
   const bal=db.customers.map(c=>{let r=0,p=0;for(let k=1;k<=c.months;k++){const i=inst(c,k);if(i.paid)p+=i.amt;else r+=i.amt}return{c,r,p}}).sort((a,b)=>b.r-a.r);
   const prod={};db.customers.forEach(c=>{const n=(c.product||'-').trim()||'-';(prod[n]=prod[n]||{n,cnt:0,tot:0}).cnt++;prod[n].tot+=c.total});
   const pl=Object.values(prod).sort((a,b)=>b.tot-a.tot);
+  const ML=monthly(),cm=todayISO().slice(0,7),cur=ML.find(x=>x.k===cm)||{down:0,dn:0};
   return `
   <div class="card hero"><small>المتبقي على العملاء</small><b>${n0(s.rem)} ج.م</b>
    <div class="sub"><span>المحصّل: ${n0(s.coll)} ج.م</span><span>إجمالي المبيعات: ${n0(s.sales)} ج.م</span></div></div>
@@ -268,8 +283,13 @@ function vHome(){
   <div class="tiles">
    ${T('المقدمات المستلمة',s.down)}${T('الأقساط المحصّلة',s.paid)}
    ${T('مستحق هذا الشهر',s.mDue,'y')}${T('محصّل هذا الشهر',s.mPaid,'g')}
-   ${T('إجمالي المحصّل (مقدم + أقساط)',s.coll,'g')}${T('المتأخر',s.late,'r')}
+   ${T('مقدمات هذا الشهر',cur.down,'g')}${T('المتأخر',s.late,'r')}
+   ${T('إجمالي المحصّل (مقدم + أقساط)',s.coll,'g wide')}
   </div>
+  <details open><summary>التحصيل الشهري (المقدمات والأقساط)</summary>
+   ${ML.length?ML.map(x=>`<div class="row"><div><b>${mLabel(x.k)}</b><small>مقدمات ${n0(x.down)} (${x.dn} عقد) • أقساط ${n0(x.inst)} (${x.inn} قسط)</small></div><div><b style="color:#1f9d4c">${n0(x.down+x.inst)}</b><small>الإجمالي</small></div></div>`).join(''):'<div class="empty">لا توجد حركات</div>'}
+   <p class="note">المقدم محسوب في شهر تاريخ العقد، والقسط في شهر تاريخ سداده.</p>
+  </details>
   <div class="card" style="text-align:center">عدد العملاء: <b>${s.cust}</b></div>
   <details><summary>أرصدة العملاء</summary>
    ${bal.length?bal.map(x=>`<div class="row"><div><b>${esc(x.c.name)}</b><small>مسدد ${n0(x.p)} ج.م</small></div><div><b style="color:${x.r?'#8a1320':'#1f9d4c'}">${n0(x.r)}</b><small>متبقي</small></div></div>`).join(''):'<div class="empty">لا يوجد عملاء</div>'}
@@ -369,6 +389,13 @@ function vSet(){
     <div class="fld"><label for="impI">2) ملف الأقساط (installments.csv)</label><input id="impI" type="file" accept=".csv,.txt"></div>
    </div>
 
+   <div class="card"><h2>التنبيهات على هذا الجهاز</h2>
+    <div class="fld"><label for="nMsg">رسالة بداية التحصيل (بتظهر أول ما تفتح التطبيق في كل شهر)</label><textarea id="nMsg" rows="2">${esc(getN().msg)}</textarea></div>
+    <label class="chk"><input type="checkbox" id="nDaily" ${getN().daily?'checked':''}> رسالة تحفيزية كل يوم (أول فتح في اليوم)</label>
+    <label class="chk"><input type="checkbox" id="nSys" ${getN().sys?'checked':''}> إشعار على شاشة التليفون كمان</label>
+    <div class="acts"><button class="b gr" data-act="saveNotif">حفظ</button><button class="b ghost" data-act="testNotif">تجربة</button></div>
+    <p class="note">التنبيهات دي بتظهر وقت ما تفتح التطبيق. للتنبيه وهو مقفول استخدم تنبيه الإيميل (الخطوات في كارت المزامنة تحت).</p></div>
+
    <div class="card"><h2>حفظ البيانات على الإنترنت (مزامنة)</h2>
     <p class="note">بياناتك بتتحفظ في Google Drive بتاعك، وتفتح من أي تليفون أو كمبيوتر بنفس الرابط وكلمة السر.</p>
     <div class="fld"><label for="syUrl">رابط الخدمة</label><input id="syUrl" dir="ltr" placeholder="https://script.google.com/macros/s/.../exec" value="${esc(S.url||'')}"></div>
@@ -385,6 +412,7 @@ function vSet(){
       <li>على أي جهاز تاني: افتح التطبيق وحط نفس الرابط وكلمة السر، والبيانات هتنزل لوحدها.</li>
      </ol>
      <button class="b ghost sm" data-act="copyScript">نسخ كود الخدمة</button>
+     <p class="note"><b>تنبيه الإيميل (اختياري):</b> كود الخدمة فيه تنبيهات على إيميلك: يوم 1 من الشهر برسالتك + عدد الأقساط المستحقة، ورسالة تحفيزية يومية لو فعّلتها. عدّل رسالتك في أول الكود (MONTH_START_MSG) وغيّر DAILY_MOTIVATION لـ true لو عايز يومي. بعد لصق الكود: من القايمة فوق اختار <b>setupTriggers</b> ثم <b>Run</b> ووافق على الصلاحيات (مرة واحدة)، وجرّب <b>testEmail</b>. وبعدها Deploy ثم Manage deployments ثم New version.</p>
      <p class="note">الرابط وكلمة السر زي مفتاح بياناتك، متبعتهمش لحد غريب.</p></details></div>
 
    <div class="card"><h2>نسخة احتياطية</h2>
@@ -630,6 +658,31 @@ function importInst(text){
   toast(`تم تسجيل ${n} قسط مسدد`+(miss?` (${miss} بدون عميل - استورد العملاء الأول)`:''));
 }
 
+/* ---------- التنبيهات ---------- */
+const NK='ikhlas_notif_v1';
+const NDEF={msg:'بدأ وقت التحصيل! يلا نبدأ الشهر بقوة 💪',daily:false,sys:false,lm:'',ld:''};
+const MOTI=['كل قسط بتحصّله بيقرّبك من هدفك 💰','ابدأ يومك بابتسامة والتحصيل هييجي 🌟','الشاطر اللي بيتابع عملاءه كل يوم ✅','يوم جديد وفرصة جديدة للتحصيل 🚀','الاتصال بالعميل بيفرق، ابدأ بأول اسم النهارده 📞','شغلك المنظم هو سر نجاحك 📒'];
+function getN(){try{return Object.assign({},NDEF,JSON.parse(localStorage.getItem(NK))||{})}catch(e){return Object.assign({},NDEF)}}
+function saveN(N){try{localStorage.setItem(NK,JSON.stringify(N))}catch(e){}}
+function showNb(t){const e=$('#nb');if(e)e.innerHTML=`<div class="alert"><span>${esc(t)}</span><button class="b ghost sm" data-act="nbClose">إغلاق</button></div>`}
+function sysNote(title,body){
+  const N=getN();
+  if(!N.sys||!('Notification' in window)||Notification.permission!=='granted'||!navigator.serviceWorker)return;
+  navigator.serviceWorker.ready.then(r=>r.showNotification(title,{body,icon:'icon-192.png',dir:'rtl',lang:'ar',tag:'ikhlas'})).catch(()=>{});
+}
+function checkNotif(){
+  const N=getN(),t=todayISO(),ym=t.slice(0,7);let msg='',title='';
+  if(N.lm!==ym){
+    const s=stats();
+    msg=N.msg+' - مستحق هذا الشهر '+n0(s.mDue)+' ج.م'+(s.lateN?'، ومتأخر '+s.lateN+' قسط':'');
+    title='بدأ وقت التحصيل';N.lm=ym;N.ld=t;
+  }else if(N.daily&&N.ld!==t){
+    msg=MOTI[Math.floor(Date.now()/864e5)%MOTI.length];title='قسطلي';N.ld=t;
+  }
+  if(!msg||!db.customers.length&&N.lm===ym&&!N.daily)return;
+  saveN(N);showNb(msg);sysNote(title,msg);
+}
+
 /* ---------- المزامنة (Google Drive عن طريق Apps Script) ---------- */
 const SCRIPT_TXT=`var KEY = 'CHANGE-ME-123';
 var FILE = 'ikhlas-data.json';
@@ -657,6 +710,50 @@ function doPost(e) {
   } finally { lock.releaseLock(); }
 }
 function doGet() { return out_({ok: true, hello: 'ikhlas'}); }
+
+// ===== التنبيهات على الإيميل (اختياري) =====
+var NOTIFY_EMAIL = '';      // سيبه فاضي = ايميل حسابك
+var SEND_HOUR = 8;          // ساعة الإرسال (0-23)
+var MONTH_START_MSG = 'بدأ وقت التحصيل! يلا نبدأ الشهر بقوة 💪';
+var DAILY_MOTIVATION = false;   // true = رسالة تحفيزية كل يوم
+var MOTIVATION = ['كل قسط بتحصّله بيقرّبك من هدفك 💰', 'ابدأ يومك بابتسامة والتحصيل هييجي 🌟', 'الشاطر اللي بيتابع عملاءه كل يوم ✅', 'يوم جديد وفرصة جديدة للتحصيل 🚀'];
+var TZ = 'Africa/Cairo';
+function ymd_(d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd'); }
+function addM_(s, k) {
+  var p = s.split('-'), y = +p[0], m = +p[1] - 1, d = +p[2];
+  var t = new Date(Date.UTC(y, m + k, 1));
+  var last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  var dd = Math.min(d, last);
+  return t.getUTCFullYear() + '-' + ('0' + (t.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + dd).slice(-2);
+}
+function summary_(today) {
+  var data = read_().data, mm = today.slice(0, 7), r = {due: 0, dueN: 0, late: 0, lateN: 0};
+  if (!data) return r;
+  (data.customers || []).forEach(function (c) {
+    var rem = c.total - c.down, mo = Math.round(rem / c.months), paid = c.paid || {};
+    for (var k = 1; k <= c.months; k++) {
+      if (paid[k]) continue;
+      var amt = k === c.months ? rem - mo * (c.months - 1) : mo, due = addM_(c.date, k);
+      if (due < today) { r.late += amt; r.lateN++; }
+      if (due.slice(0, 7) === mm) { r.due += amt; r.dueN++; }
+    }
+  });
+  return r;
+}
+function monthMail_(today, to) {
+  var s = summary_(today);
+  MailApp.sendEmail(to, 'بدأ وقت التحصيل', MONTH_START_MSG + '\\n\\nمستحق هذا الشهر: ' + s.dueN + ' قسط بقيمة ' + s.due + ' ج.م\\nمتأخر من قبل: ' + s.lateN + ' قسط بقيمة ' + s.late + ' ج.م');
+}
+function dailyJob() {
+  var today = ymd_(new Date()), to = NOTIFY_EMAIL || Session.getEffectiveUser().getEmail();
+  if (today.slice(8) === '01') monthMail_(today, to);
+  else if (DAILY_MOTIVATION) MailApp.sendEmail(to, 'رسالة اليوم', MOTIVATION[Math.floor(Math.random() * MOTIVATION.length)]);
+}
+function setupTriggers() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'dailyJob') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('dailyJob').timeBased().everyDays(1).atHour(SEND_HOUR).create();
+}
+function testEmail() { monthMail_(ymd_(new Date()), NOTIFY_EMAIL || Session.getEffectiveUser().getEmail()); }
 `;
 const SK='ikhlas_sync_v1';
 function getSync(){try{return JSON.parse(localStorage.getItem(SK))||{}}catch(e){return {}}}
@@ -769,7 +866,7 @@ async function copyScript(){
   catch(e){const t=document.createElement('textarea');t.value=SCRIPT_TXT;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove()}
   toast('تم نسخ كود الخدمة');
 }
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleSync(300)});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){scheduleSync(300);checkNotif()}});
 window.addEventListener('online',()=>scheduleSync(300));
 setInterval(()=>{if(!document.hidden)scheduleSync(0)},90000);
 
@@ -781,6 +878,12 @@ document.addEventListener('click',e=>{
   switch(a){
     case 'close':$('#'+b.dataset.d).close();break;
     case 'pf':payF=b.dataset.f;render();break;
+    case 'nbClose':$('#nb').innerHTML='';break;
+    case 'saveNotif':{
+      const N=getN();N.msg=$('#nMsg').value.trim()||NDEF.msg;N.daily=$('#nDaily').checked;N.sys=$('#nSys').checked;saveN(N);
+      if(N.sys&&'Notification' in window&&Notification.permission==='default')Notification.requestPermission();
+      toast('تم حفظ التنبيهات');break}
+    case 'testNotif':{const N=getN();showNb(($('#nMsg')?$('#nMsg').value.trim():N.msg)||N.msg);sysNote('قسطلي',N.msg);break}
     case 'goLate':payF='late';view='pay';render();break;
     case 'pay':openPay(cid,k);break;
     case 'payGo':payGo(b.dataset.p==='1');break;
@@ -834,7 +937,7 @@ document.addEventListener('change',async e=>{
 });
 
 if('serviceWorker' in navigator&&location.protocol.indexOf('http')===0)navigator.serviceWorker.register('sw.js').catch(()=>{});
-head();render();setSyn(getSync().pending?'☁ ...':'☁ ✓','');scheduleSync(600);
+head();render();setSyn(getSync().pending?'☁ ...':'☁ ✓','');scheduleSync(600);checkNotif();
 </script>
 </body>
 </html>
